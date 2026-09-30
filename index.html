@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2563eb">
+  <title>Excel to PDF</title>
+
+  <!-- Libraries work on GitHub Pages because they are loaded from public CDNs. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #eff6ff, #f8fafc);
+      color: #0f172a;
+    }
+
+    .container {
+      width: min(1100px, 94%);
+      margin: 28px auto;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, .08);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 28px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+    }
+
+    .header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(25px, 5vw, 36px);
+    }
+
+    .header p {
+      margin: 0;
+      opacity: .9;
+      line-height: 1.5;
+    }
+
+    .content {
+      padding: 24px;
+    }
+
+    .upload-area {
+      border: 2px dashed #93c5fd;
+      border-radius: 14px;
+      padding: 25px 18px;
+      text-align: center;
+      background: #f8fbff;
+      transition: .2s;
+    }
+
+    .upload-area.dragover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+
+    .upload-icon {
+      font-size: 38px;
+      margin-bottom: 8px;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s, opacity .15s, background .15s;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-success { background: #16a34a; color: white; }
+    .btn-secondary { background: #e2e8f0; color: #0f172a; }
+
+    .file-name {
+      margin-top: 14px;
+      font-weight: 700;
+      color: #1e40af;
+      word-break: break-word;
+    }
+
+    .settings {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 15px;
+    }
+
+    .setting {
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+
+    .setting label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 7px;
+    }
+
+    .setting select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: white;
+      padding: 10px;
+      font-size: 15px;
+    }
+
+    .locked {
+      color: #475569;
+      font-size: 15px;
+      padding: 10px 0 0;
+    }
+
+    .actions {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .status {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      color: #334155;
+      line-height: 1.45;
+      display: none;
+    }
+
+    .status.show { display: block; }
+    .status.error { background: #fef2f2; color: #b91c1c; }
+    .status.success { background: #f0fdf4; color: #166534; }
+
+    .info {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    /* Hidden rendering area used to create the PDF. */
+    #pdfRender {
+      position: fixed;
+      left: -100000px;
+      top: 0;
+      background: white;
+      color: black;
+      padding: 0;
+      margin: 0;
+      overflow: visible;
+    }
+
+    #pdfRender table {
+      border-collapse: collapse;
+      table-layout: auto;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #pdfRender th,
+    #pdfRender td {
+      border: 1px solid #555;
+      padding: 3px 5px;
+      font-size: 9px;
+      line-height: 1.15;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    #pdfRender th {
+      font-weight: 700;
+      background: #e5e7eb;
+    }
+
+    .footer {
+      text-align: center;
+      padding: 18px;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    @media (max-width: 650px) {
+      .container { width: 96%; margin: 12px auto; }
+      .content { padding: 16px; }
+      .header { padding: 22px 18px; }
+      .settings { grid-template-columns: 1fr; }
+      .actions .btn { width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <h1>Excel → PDF</h1>
+        <p>Upload an Excel file and create a PDF using the selected print settings.</p>
+      </div>
+
+      <div class="content">
+        <div class="upload-area" id="dropArea">
+          <div class="upload-icon">📄</div>
+          <strong>Upload Excel file</strong>
+          <p>Choose an .xlsx file or drag and drop it here.</p>
+
+          <label class="btn btn-primary" for="fileInput">Choose XLSX File</label>
+          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+
+          <div id="fileName" class="file-name">No file selected</div>
+        </div>
+
+        <div class="settings">
+          <div class="setting">
+            <label>What to print</label>
+            <select id="printWhat">
+              <option value="active">Active Sheet</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label>Scaling</label>
+            <select id="scaling">
+              <option value="fit">Fit entire sheet on one page</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label>Paper size</label>
+            <select id="paperSize">
+              <option value="A4">ISO A4</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label>Orientation</label>
+            <select id="orientation">
+              <option value="portrait">Portrait</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="applyBtn" class="btn btn-primary" disabled>Apply Settings</button>
+          <button id="downloadBtn" class="btn btn-success" disabled>Download PDF</button>
+          <button id="shareBtn" class="btn btn-secondary" disabled>Share PDF</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="info">
+          <strong>Selected settings:</strong> Active Sheet • Fit entire sheet on one page • ISO A4 • Portrait
+          <br>
+          Your Excel file is processed in your browser; it is not uploaded to a server by this page.
+        </div>
+      </div>
+
+      <div class="footer">Works as a static GitHub Pages website.</div>
+    </div>
+  </div>
+
+  <div id="pdfRender"></div>
+
+<script>
+  let selectedFile = null;
+  let workbook = null;
+  let pdfBlob = null;
+  let pdfFileName = null;
+  let settingsApplied = false;
+
+  const fileInput = document.getElementById('fileInput');
+  const dropArea = document.getElementById('dropArea');
+  const fileNameEl = document.getElementById('fileName');
+  const applyBtn = document.getElementById('applyBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const shareBtn = document.getElementById('shareBtn');
+  const statusEl = document.getElementById('status');
+  const pdfRender = document.getElementById('pdfRender');
+
+  function showStatus(message, type = '') {
+    statusEl.textContent = message;
+    statusEl.className = 'status show ' + type;
+  }
+
+  function resetResult() {
+    settingsApplied = false;
+    pdfBlob = null;
+    pdfFileName = null;
+    downloadBtn.disabled = true;
+    shareBtn.disabled = true;
+  }
+
+  async function loadExcel(file) {
+    resetResult();
+
+    if (!file || !file.name.toLowerCase().endsWith('.xlsx')) {
+      showStatus('Please select a valid .xlsx Excel file.', 'error');
+      return;
+    }
+
+    selectedFile = file;
+    fileNameEl.textContent = file.name;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+
+      workbook = XLSX.read(arrayBuffer, {
+        type: 'array',
+        cellStyles: true,
+        cellDates: true
+      });
+
+      if (!workbook.SheetNames.length) {
+        throw new Error('The Excel file does not contain any worksheet.');
+      }
+
+      // Active sheet according to the workbook's active-tab setting.
+      let activeIndex = 0;
+      if (workbook.Workbook &&
+          workbook.Workbook.Views &&
+          workbook.Workbook.Views[0] &&
+          Number.isInteger(workbook.Workbook.Views[0].activeTab)) {
+        activeIndex = workbook.Workbook.Views[0].activeTab;
+      }
+
+      activeIndex = Math.min(activeIndex, workbook.SheetNames.length - 1);
+
+      showStatus(
+        'File loaded successfully. Active sheet: ' +
+        workbook.SheetNames[activeIndex] +
+        '. Click "Apply Settings" to prepare the PDF.',
+        'success'
+      );
+
+      applyBtn.disabled = false;
+    } catch (err) {
+      workbook = null;
+      selectedFile = null;
+      applyBtn.disabled = true;
+      showStatus('Could not read the Excel file: ' + err.message, 'error');
+    }
+  }
+
+  fileInput.addEventListener('change', e => {
+    loadExcel(e.target.files[0]);
+  });
+
+  dropArea.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropArea.classList.add('dragover');
+  });
+
+  dropArea.addEventListener('dragleave', () => {
+    dropArea.classList.remove('dragover');
+  });
+
+  dropArea.addEventListener('drop', e => {
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+
+    const file = e.dataTransfer.files[0];
+    loadExcel(file);
+  });
+
+  function getActiveSheet() {
+    let activeIndex = 0;
+
+    if (workbook.Workbook &&
+        workbook.Workbook.Views &&
+        workbook.Workbook.Views[0] &&
+        Number.isInteger(workbook.Workbook.Views[0].activeTab)) {
+      activeIndex = workbook.Workbook.Views[0].activeTab;
+    }
+
+    activeIndex = Math.min(activeIndex, workbook.SheetNames.length - 1);
+    return workbook.Sheets[workbook.SheetNames[activeIndex]];
+  }
+
+  function buildTable(sheet) {
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
+    const table = document.createElement('table');
+    const tbody = document.createElement('tbody');
+
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const tr = document.createElement('tr');
+
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellAddress = XLSX.utils.encode_cell({ r, c });
+        const cell = sheet[cellAddress];
+        const el = document.createElement(r === range.s.r ? 'th' : 'td');
+
+        let value = '';
+        if (cell) {
+          if (cell.w !== undefined) {
+            value = cell.w;
+          } else if (cell.v !== undefined) {
+            value = cell.v;
+          }
+        }
+
+        el.textContent = value;
+        tr.appendChild(el);
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    return table;
+  }
+
+  async function createPdfBlob() {
+    if (!workbook || !selectedFile) {
+      throw new Error('Please upload an Excel file first.');
+    }
+
+    const sheet = getActiveSheet();
+    if (!sheet) throw new Error('Could not find the active sheet.');
+
+    pdfRender.innerHTML = '';
+    const table = buildTable(sheet);
+    pdfRender.appendChild(table);
+
+    // Make rendering area exactly the table size before taking the screenshot.
+    const tableWidth = Math.max(table.scrollWidth, table.offsetWidth, 1);
+    const tableHeight = Math.max(table.scrollHeight, table.offsetHeight, 1);
+
+    pdfRender.style.width = tableWidth + 'px';
+    pdfRender.style.height = tableHeight + 'px';
+
+    // Give the browser a moment to finish layout.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const canvas = await html2canvas(pdfRender, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false
+    });
+
+    const { jsPDF } = window.jspdf;
+
+    // Required: ISO A4, portrait.
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 5;
+    const usableWidth = pageWidth - margin * 2;
+    const usableHeight = pageHeight - margin * 2;
+
+    // Fit the entire sheet onto ONE A4 portrait page.
+    const scaleX = usableWidth / canvas.width;
+    const scaleY = usableHeight / canvas.height;
+    const scale = Math.min(scaleX, scaleY);
+
+    const renderWidth = canvas.width * scale;
+    const renderHeight = canvas.height * scale;
+
+    const x = (pageWidth - renderWidth) / 2;
+    const y = (pageHeight - renderHeight) / 2;
+
+    const imageData = canvas.toDataURL('image/jpeg', 0.92);
+
+    pdf.addImage(
+      imageData,
+      'JPEG',
+      x,
+      y,
+      renderWidth,
+      renderHeight,
+      undefined,
+      'FAST'
+    );
+
+    const arrayBuffer = pdf.output('arraybuffer');
+    return new Blob([arrayBuffer], { type: 'application/pdf' });
+  }
+
+  applyBtn.addEventListener('click', async () => {
+    if (!selectedFile || !workbook) return;
+
+    applyBtn.disabled = true;
+    downloadBtn.disabled = true;
+    shareBtn.disabled = true;
+
+    showStatus('Applying settings and creating PDF…', '');
+
+    try {
+      pdfBlob = await createPdfBlob();
+
+      const originalName = selectedFile.name.replace(/\.[^.]+$/, '');
+      pdfFileName = originalName + '.pdf';
+
+      settingsApplied = true;
+      downloadBtn.disabled = false;
+
+      if (navigator.share && window.File) {
+        try {
+          const testFile = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
+          if (navigator.canShare && navigator.canShare({ files: [testFile] })) {
+            shareBtn.disabled = false;
+          }
+        } catch (_) {}
+      }
+
+      showStatus(
+        'PDF is ready. The download filename will be "' + pdfFileName +
+        '". You can now download or share it.',
+        'success'
+      );
+    } catch (err) {
+      settingsApplied = false;
+      showStatus('PDF creation failed: ' + err.message, 'error');
+    } finally {
+      applyBtn.disabled = false;
+    }
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    if (!settingsApplied || !pdfBlob) return;
+
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = pdfFileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  shareBtn.addEventListener('click', async () => {
+    if (!settingsApplied || !pdfBlob || !navigator.share) return;
+
+    try {
+      const file = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
+
+      if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+        throw new Error('File sharing is not supported by this browser.');
+      }
+
+      await navigator.share({
+        title: pdfFileName,
+        text: 'PDF generated from Excel',
+        files: [file]
+      });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showStatus('Sharing is not supported here. Please use Download PDF instead.', 'error');
+      }
+    }
+  });
+</script>
+</body>
+</html>
