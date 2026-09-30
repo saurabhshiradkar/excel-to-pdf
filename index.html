@@ -6,6 +6,9 @@
   <meta name="theme-color" content="#2563eb">
   <title>Excel to PDF</title>
 
+  <!-- Dynamic Web App Manifest via Data URI for single-file PWA support -->
+  <link rel="manifest" id="manifestPlaceholder">
+
   <!-- Libraries work on GitHub Pages because they are loaded from public CDNs. -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -140,12 +143,6 @@
       font-size: 15px;
     }
 
-    .locked {
-      color: #475569;
-      font-size: 15px;
-      padding: 10px 0 0;
-    }
-
     .actions {
       margin-top: 22px;
       display: flex;
@@ -172,6 +169,70 @@
       font-size: 13px;
       color: #64748b;
       line-height: 1.6;
+    }
+
+    /* PWA Install Banner Popup */
+    .pwa-banner {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(150%);
+      width: min(500px, 92%);
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 16px 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      z-index: 9999;
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .pwa-banner.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .pwa-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .pwa-icon {
+      font-size: 28px;
+    }
+
+    .pwa-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pwa-text strong {
+      font-size: 15px;
+      color: #0f172a;
+    }
+
+    .pwa-text span {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .pwa-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-close {
+      background: transparent;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #94a3b8;
+      padding: 4px;
     }
 
     /* Hidden rendering area used to create the PDF. */
@@ -220,6 +281,9 @@
       .header { padding: 22px 18px; }
       .settings { grid-template-columns: 1fr; }
       .actions .btn { width: 100%; }
+      .pwa-banner { flex-direction: column; align-items: stretch; text-align: center; }
+      .pwa-info { flex-direction: column; }
+      .pwa-actions { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -293,9 +357,86 @@
     </div>
   </div>
 
+  <!-- PWA Install Banner Popup -->
+  <div id="pwaBanner" class="pwa-banner">
+    <div class="pwa-info">
+      <div class="pwa-icon">📲</div>
+      <div class="pwa-text">
+        <strong>Install App</strong>
+        <span>Add Excel to PDF converter to your phone for fast offline access.</span>
+      </div>
+    </div>
+    <div class="pwa-actions">
+      <button id="pwaInstallBtn" class="btn btn-primary" style="padding: 8px 14px; font-size: 13px;">Install</button>
+      <button id="pwaCloseBtn" class="btn-close">&times;</button>
+    </div>
+  </div>
+
   <div id="pdfRender"></div>
 
 <script>
+  // --- 1. PWA & Service Worker Registration ---
+  const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="%232563eb"><rect width="512" height="512" rx="100" fill="%232563eb"/><path d="M160 120h192v272H160z" fill="%23ffffff"/><text x="256" y="290" font-family="Arial" font-size="160" font-weight="bold" fill="%232563eb" text-anchor="middle">X</text></svg>`;
+  const iconUrl = 'data:image/svg+xml;charset=utf-8,' + svgIcon;
+
+  const manifest = {
+    name: "Excel to PDF Converter",
+    short_name: "Excel2PDF",
+    start_url: "./",
+    display: "standalone",
+    background_color: "#eff6ff",
+    theme_color: "#2563eb",
+    icons: [
+      { src: iconUrl, sizes: "192x192", type: "image/svg+xml" },
+      { src: iconUrl, sizes: "512x512", type: "image/svg+xml" }
+    ]
+  };
+
+  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+  document.getElementById('manifestPlaceholder').href = URL.createObjectURL(manifestBlob);
+
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+      self.addEventListener('install', (e) => self.skipWaiting());
+      self.addEventListener('activate', (e) => self.clients.claim());
+      self.addEventListener('fetch', (e) => {
+        e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+      });
+    `;
+    const swBlob = new Blob([swCode], { type: 'text/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
+  }
+
+  // --- 2. PWA Install Popup Controller ---
+  let deferredPrompt = null;
+  const pwaBanner = document.getElementById('pwaBanner');
+  const pwaInstallBtn = document.getElementById('pwaInstallBtn');
+  const pwaCloseBtn = document.getElementById('pwaCloseBtn');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    pwaBanner.classList.add('show');
+  });
+
+  pwaInstallBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    pwaBanner.classList.remove('show');
+  });
+
+  pwaCloseBtn.addEventListener('click', () => {
+    pwaBanner.classList.remove('show');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    pwaBanner.classList.remove('show');
+    deferredPrompt = null;
+  });
+
+  // --- 3. Main Application Logic ---
   let selectedFile = null;
   let workbook = null;
   let pdfBlob = null;
@@ -348,7 +489,6 @@
         throw new Error('The Excel file does not contain any worksheet.');
       }
 
-      // Active sheet according to the workbook's active-tab setting.
       let activeIndex = 0;
       if (workbook.Workbook &&
           workbook.Workbook.Views &&
@@ -455,14 +595,12 @@
     const table = buildTable(sheet);
     pdfRender.appendChild(table);
 
-    // Make rendering area exactly the table size before taking the screenshot.
     const tableWidth = Math.max(table.scrollWidth, table.offsetWidth, 1);
     const tableHeight = Math.max(table.scrollHeight, table.offsetHeight, 1);
 
     pdfRender.style.width = tableWidth + 'px';
     pdfRender.style.height = tableHeight + 'px';
 
-    // Give the browser a moment to finish layout.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     const canvas = await html2canvas(pdfRender, {
@@ -474,7 +612,6 @@
 
     const { jsPDF } = window.jspdf;
 
-    // Required: ISO A4, portrait.
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -488,7 +625,6 @@
     const usableWidth = pageWidth - margin * 2;
     const usableHeight = pageHeight - margin * 2;
 
-    // Fit the entire sheet onto ONE A4 portrait page.
     const scaleX = usableWidth / canvas.width;
     const scaleY = usableHeight / canvas.height;
     const scale = Math.min(scaleX, scaleY);
